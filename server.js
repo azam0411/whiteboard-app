@@ -9,6 +9,16 @@ const server = http.createServer(app);
 
 app.use(cors());
 
+app.use(
+  cors({
+    origin: [
+      "http://localhost:3000",
+      "https://whiteboard-app-frontend.vercel.app/",
+    ],
+    methods: ["GET", "POST"],
+  })
+);
+
 const io = new Server(server, {
   cors: {
     origin: "*", // You can restrict this to your frontend origin
