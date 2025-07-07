@@ -1,48 +1,70 @@
 const express = require("express");
 const http = require("http");
-const { Socket } = require("socket.io");
 const { Server } = require("socket.io");
-const path = require("path");
-const { log } = require("console");
+const cors = require("cors");
+const { timeStamp } = require("console");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
 
-app.use(express.static(path.join(__dirname, "public")));
+app.use(cors());
 
-app.get("/room/:roomId", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+const io = new Server(server, {
+  cors: {
+    origin: "*", // You can restrict this to your frontend origin
+    methods: ["GET", "POST"],
+  },
 });
+
+const rooms = {}; // Track sockets in each room
 
 io.on("connection", (socket) => {
-  console.log("a user connected", socket.id);
+  console.log("🟢 New client connected");
 
-  socket.on("join-room", (roomId) => {
+  // Handle joining a room with a name
+  socket.on("join-room", ({ roomId, name }) => {
     socket.join(roomId);
-    socket.data.roomId = roomId;
-    console.log(`User ${socket.id} joined room ${roomId}`);
-  });
-  socket.on("draw", (data) => {
-    const roomId = socket.data.roomId;
-    if (roomId) {
+    socket.data.name = name || "Anonymous";
+
+    // Add socket to room tracking
+    if (!rooms[roomId]) {
+      rooms[roomId] = [];
+    }
+    rooms[roomId].push(socket);
+
+    // Broadcast updated user list
+    const usersInRoom = rooms[roomId].map((s) => s.data.name);
+    io.to(roomId).emit("update-users", usersInRoom);
+
+    // Handle drawing sync
+    socket.on("draw", (data) => {
       socket.to(roomId).emit("draw", data);
-    }
-  });
+    });
 
-  socket.on("clear", () => {
-    const roomId = socket.data.roomId;
-    if (roomId) {
+    // Handle clear event
+    socket.on("clear", () => {
       socket.to(roomId).emit("clear");
-    }
-  });
+    });
 
-  socket.on("disconnect", () => {
-    console.log("User disconnected", socket.id);
+    // Handle disconnect
+    socket.on("disconnect", () => {
+      if (rooms[roomId]) {
+        rooms[roomId] = rooms[roomId].filter((s) => s !== socket);
+        const updatedUsers = rooms[roomId].map((s) => s.data.name);
+        io.to(roomId).emit("update-users", updatedUsers);
+      }
+    });
+    socket.on("chat-message", (message) => {
+      io.to(roomId).emit("chat-message", {
+        name: socket.data.name,
+        message: message,
+        timeStamp: new Date().toISOString(),
+      });
+    });
   });
 });
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-  console.log(`server running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
